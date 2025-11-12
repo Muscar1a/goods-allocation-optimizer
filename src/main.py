@@ -16,10 +16,16 @@ from src.config import (
     create_directories,
 )
 
+from src.engine.rule_based import RuleBasedOptimizer
 
 def setup_directories():
     return create_directories()
 
+def run_rule_based_optimization(analyzer, excess_df, needed_df, args):
+    print("\n=== RULE-BASED OPTIMIZATION ===")
+    
+    optimizer = RuleBasedOptimizer()
+    
 
 def run_analysis(args):
     """Run inventory analysis."""
@@ -39,6 +45,25 @@ def run_analysis(args):
     excess_df, needed_df = analyzer.identify_inventory_imbalances(
         min_days=args.min_days, max_days=args.max_days
     )
+    
+    analysis_df.to_csv(
+        os.path.join(args.results_dir, "inventory_analysis.csv"), index=False
+    )
+    excess_df.to_csv(
+        os.path.join(args.results_dir, "excess_inventory.csv"), index=False
+    )
+    needed_df.to_csv(
+        os.path.join(args.results_dir, "needed_inventory.csv"), index=False
+    )
+    
+    excess_units = excess_df['excess_units'].sum()
+    needed_units = needed_df['needed_units'].sum()
+    
+    print(f"\nTotal Excess Units: {excess_units}")
+    print(f"Total Needed Units: {needed_units}")
+    print(f"Excess to needed ratio: {excess_units / needed_units:.2f}")
+    
+    return analyzer, analysis_df, excess_df, needed_df
     
 
 def main():
@@ -105,8 +130,13 @@ def main():
             return
         
     analyzer, analysis_df, excess_df, needed_df = run_analysis(args)
-        
-        
+    
+    results_dict = {}
+    
+    if args.rule_based or args.all:
+        transfer_plan, impact_df = run_rule_based_optimization(
+            analyzer, excess_df, needed_df, args
+        )
         
 if __name__ == "__main__":
     main()
