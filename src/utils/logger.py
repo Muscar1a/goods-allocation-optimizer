@@ -44,6 +44,16 @@ class OptimizationLogger:
         
         return logger
         
+    def log_progress(self, component_name, message):
+        """
+        Log a progress message.
+        
+        Args:
+            component_name: Name of the component
+            message: Progress message to log
+        """
+        logger = self.get_logger(component_name)
+        logger.info(message)
         
 
 def get_optimization_logger(base_log_dir="logs"):
