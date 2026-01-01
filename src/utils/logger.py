@@ -43,6 +43,38 @@ class OptimizationLogger:
         logger.propagate = False
         
         return logger
+    
+    def log_execution_start(self, component_name, parameters=None):
+        logger = self.get_logger(component_name)
+        
+        logger.info("=" * 60)
+        logger.info("=" * 60)
+        logger.info(f"Starting {component_name.replace('_', ' ').title()} Execution")
+        logger.info("=" * 60)
+
+        if parameters:
+            logger.info("Execution Parameters:")
+            for key, value in parameters.items():
+                logger.info(f"  - {key}: {value}")
+
+        logger.info(f"Log file: {self.log_dir / f'{component_name}.log'}")
+        logger.info("=" * 60)
+
+    def log_execution_end(self, component_name, execution_time=None, results=None):
+        logger = self.get_logger(component_name)
+
+        logger.info("-" * 60)
+        logger.info(f"{component_name.replace('_', ' ').title()} Execution Completed")
+
+        if execution_time:
+            logger.info(f"Total Execution Time: {execution_time:.2f} seconds")
+
+        if results:
+            logger.info("Execution Results:")
+            for key, value in results.items():
+                logger.info(f"  - {key}: {value}")
+
+        logger.info("=" * 60)
         
     def log_progress(self, component_name, message):
         """
@@ -55,6 +87,62 @@ class OptimizationLogger:
         logger = self.get_logger(component_name)
         logger.info(message)
         
+    def log_error(self, component_name, error_message, exception=None):
+        """
+        Log an error message.
+
+        Args:
+            component_name: Name of the component
+            error_message: Error message to log
+            exception: Exception object (optional)
+        """
+        logger = self.get_logger(component_name)
+
+        if exception:
+            logger.error(f"ERROR: {error_message}")
+            logger.error(f"Exception: {str(exception)}")
+        else:
+            logger.error(f"ERROR: {error_message}")
+
+    def log_warning(self, component_name, warning_message):
+        """
+        Log a warning message.
+
+        Args:
+            component_name: Name of the component
+            warning_message: Warning message to log
+        """
+        logger = self.get_logger(component_name)
+        logger.warning(f"WARNING: {warning_message}")
+
+    def get_log_summary(self):
+        """
+        Get a summary of all log files created today.
+
+        Returns:
+            Dictionary with log file information
+        """
+        log_files = []
+
+        if self.log_dir.exists():
+            for log_file in self.log_dir.glob("*.log"):
+                file_size = log_file.stat().st_size
+                log_files.append(
+                    {
+                        "file": log_file.name,
+                        "path": str(log_file),
+                        "size_bytes": file_size,
+                        "size_mb": file_size / (1024 * 1024),
+                    }
+                )
+
+        return {
+            "date": self.today,
+            "log_directory": str(self.log_dir),
+            "log_files": log_files,
+            "total_files": len(log_files),
+        }
+
 
 def get_optimization_logger(base_log_dir="logs"):
     

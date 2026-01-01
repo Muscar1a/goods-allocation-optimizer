@@ -1,4 +1,7 @@
+from time import time
 import pandas as pd
+from data_generator.data_generator_main import generate_all_data
+from engine.results_manager import ResultsManager
 from src.engine.analyzer import InventoryAnalyzer
 import argparse
 from pathlib import Path
@@ -47,6 +50,37 @@ def run_rule_based_optimization(analyzer, excess_df, needed_df, args):
     
     optimizer = RuleBasedOptimizer()
     
+    optimizer.load_matrices(
+        distance_path=os.path.join(args.data_dir, "distance_matrix.csv"),
+        cost_path=os.path.join(args.data_dir, "transport_cost_matrix.csv"),
+    )
+    
+    start_time = time()
+    
+    transfer_plan = optimizer.optimize(excess_df, needed_df)
+    
+    execution_time = time() - start_time
+    print(f"Rule-based optimization completed in {execution_time:.2f} seconds.")
+    
+    stores_df = pd.read_csv(os.path.join(args.data_dir, "stores.csv"))
+    products_df = pd.read_csv(os.path.join(args.data_dir, "products.csv"))
+    optimizer.add_store_product_names(stores_df=stores_df, product_df=products_df)
+    
+    if not transfer_plan.empty:
+        transfer_plan.to_csv(
+            os.path.join(args.results_dir, "rule_based_transfer_plan.csv"), index=False
+        )
+        
+        impact_df, _ = analyzer.evaluate_plan_impact(transfer_plan)
+        
+        pd.DataFrame(impact_df).to_csv(
+            os.path.join(args.results_dir, "rule_based_impact.csv")
+        )
+
+        return transfer_plan, impact_df
+
+    return transfer_plan, None
+
 
 def run_analysis(args):
     """Run inventory analysis."""
@@ -85,7 +119,18 @@ def run_analysis(args):
     print(f"Excess to needed ratio: {excess_units / needed_units:.2f}")
     
     return analyzer, analysis_df, excess_df, needed_df
-    
+
+def create_results(analysis_df, results_dict, analyzer, args):
+    """Create simplified results: summary and best transfer plan."""
+    print("\n=== GENERATING RESULTS ===")
+
+    # Load store and product data
+    stores_df = pd.read_csv(os.path.join(args.data_dir, "stores.csv"))
+    products_df = pd.read_csv(os.path.join(args.data_dir, "products.csv"))
+
+    # Create results manager and generate final results
+    results_manager = ResultsManager(args.results_dir)
+    results_manager.create_final_results(results_dict, stores_df, products_df)
 
 def main():
     parser = argparse.ArgumentParser(description="Goods Allocation Optimization System")
@@ -200,6 +245,17 @@ def main():
         transfer_plan, impact_df = run_rule_based_optimization(
             analyzer, excess_df, needed_df, args
         )
+        results_dict["Rule-based"] = (transfer_plan, impact_df)
         
+    # if args.ga or args.all:
+    
+    if results_dict:
+        create_results(analysis_df, results_dict, analyzer, args)
+        
+    print("\n=== INVENTORY TRANSFER OPTIMIZATION COMPLETE ===")
+    print(f"Results saved to {args.results_dir} directory:")
+    print(f"  • result_summary.txt - Algorithm comparison and recommendations")
+    print(f"  • best_transfer_plan.csv - Optimized transfer plan")
+
 if __name__ == "__main__":
     main()

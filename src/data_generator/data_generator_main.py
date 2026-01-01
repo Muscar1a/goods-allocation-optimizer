@@ -4,7 +4,14 @@
 
 import os
 from time import time
+
+import pandas as pd
 from config import DATA_DIR, EXCESS_PERCENT, MAX_INVENTORY_DAYS, MIN_INVENTORY_DAYS, NUM_PRODUCTS, RANDOM_SEED, SHORTAGE_PERCENT, SALE_DAYS
+from data_generator.distance_calculator import DistanceCalculator
+from data_generator.inventory_generator import InventoryGenerator
+from data_generator.product_generator import ProductGenerator
+from data_generator.sales_generator import SalesGenerator
+from data_generator.store_generator import StoreGenerator
 from utils.logger import get_optimization_logger
 
 
@@ -56,11 +63,154 @@ def generate_all_data(
     products_path = os.path.join(output_dir, "products.csv")
     sales_path = os.path.join(output_dir, "sales_data.csv")
     inventory_path = os.path.join(output_dir, "inventory_data.csv")
-    distance_matrix_path = os.path.join(output_dir, "distance_matrix.csv")
-    transport_cost_matrix_path = os.path.join(
-        output_dir, "transport_cost_matrix.csv"
-    )
+    distance_path = os.path.join(output_dir, "distance_matrix.csv")
+    cost_path = os.path.join(output_dir, "transport_cost_matrix.csv")
     
     print("\n1. Generating store data...")
     logger_system.log_progress("data_generation", "Step 1: Generating store data...")
     store_gen = StoreGenerator(random_seed=random_seed)
+    stores = store_gen.generate_stores(stores_path)
+    logger_system.log_progress(
+        "data_generation", f"Generated {len(stores)} stores successfully."
+    )
+    
+    print("\n2. Generating sales data...")
+    logger_system.log_progress("data_generation", "Step 2: Generating product data...")
+    product_gen = ProductGenerator(random_seed=random_seed)
+    products = product_gen.generate_products(num_products, products_path)
+    logger_system.log_progress(
+        "data_generation", f"Generated {len(products)} products successfully."
+    )
+    
+    print("\n3. Generating sales data...")
+    logger_system.log_progress("data_generation", "Step 3: Generating sales data...")
+    sales_gen = SalesGenerator(stores, products, random_seed=random_seed)
+    sales_df = sales_gen.generate_sales_data(days, sales_path)
+    logger_system.log_progress(
+        "data_generation", f"Generated {len(sales_df)} sales records for {days} days"
+    )
+    
+    print("\n4. Generating inventory data with balanced imbalances...")
+    logger_system.log_progress(
+        "data_generation",
+        "Step 4: Generating inventory data with balanced imbalances...",
+    )
+    inventory_gen = InventoryGenerator(sales_df, random_seed=random_seed)
+    inventory_df = inventory_gen.generate_inventory_data(
+        inventory_path,
+        min_days=min_days,
+        max_days=max_days,
+        excess_percent=excess_percent,
+        shortage_percent=shortage_percent,
+    )
+    logger_system.log_progress(
+        "data_generation",
+        f"Generated inventory data for {len(inventory_df)} store-product combinations",
+    )
+    
+    print("\n5. Generating distance adn cost matrices...")
+    logger_system.log_progress(
+        "data_generation", "Step 5: Generating distance and cost matrices..."
+    )
+    distance_calc = DistanceCalculator(stores)
+    distance_matrix = distance_calc.generate_disstance_matrix(distance_path)
+    cost_matrix = distance_calc.generate_transport_cost_matrix(
+        distance_matrix, cost_path
+    )
+    logger_system.log_progress(
+        "data_generation",
+        f"Generated {len(distance_matrix)} x {len(distance_matrix.columns)} distance and cost matrices",
+    )
+    
+    print("\nData generation complete!")
+    print(f"All files saved to directory: {output_dir}")
+    
+    print("\nData Summary:")
+    print(f"- Stores: {len(stores)}")
+    print(f"- Products: {len(products)}")
+    print(f"- Sales records: {len(sales_df)}")
+    print(f"- Store-product combinations: {len(inventory_df)}")
+    
+    avg_sales = (
+        sales_df.groupby(["store_id", "product_id"])["quantity"].mean().reset_index()
+    )
+    avg_sales.rename(columns={"quantity": "avg_daily_sales"}, inplace=True)
+    
+    analysis_df = pd.merge(
+        inventory_df, avg_sales, on=["store_id", "product_id"], how="left"
+    )
+    
+    analysis_df["avg_daily_sales"].fillna(0.01, inplace=True)
+    
+    analysis_df["days_of_inventory"] = (
+        analysis_df["current_stock"] / analysis_df["avg_daily_sales"]
+    )
+
+    excess_count = len(analysis_df[analysis_df["days_of_inventory"] > max_days])
+    
+    shortage_count = len(analysis_df[analysis_df["days_of_inventory"] < min_days])
+    
+    balanced_count = len(analysis_df) - excess_count - shortage_count
+    
+    print(f"- Inventory status:")
+    print(
+        f"  * Excess items (>{max_days} days): {excess_count} ({excess_count/len(analysis_df)*100:.1f}%)"
+    )
+    print(
+        f"  * Shortage items (<{min_days} days): {shortage_count} ({shortage_count/len(analysis_df)*100:.1f}%)"
+    )
+    print(
+        f"  * Balanced items: {balanced_count} ({balanced_count/len(analysis_df)*100:.1f}%)"
+    )
+
+    product_status = []
+    for product_id in analysis_df["product_id"].unique():
+        product_df = analysis_df[analysis_df["product_id"] == product_id]
+        has_excess = len(product_df[product_df["days_of_inventory"] > max_days]) > 0
+        has_shortage = len(product_df[product_df["days_of_inventory"] < min_days]) > 0
+
+        if has_excess and has_shortage:
+            product_status.append(
+                {"product_id": product_id, "has_both_excess_and_shortage": True}
+            )
+
+    transferable_products = len(product_status)
+    print(
+        f"- Products with both excess and shortage across stores: {transferable_products}"
+    )
+    print(
+        f"  ({transferable_products/len(analysis_df['product_id'].unique())*100:.1f}% of total products)"
+    )
+
+    if transferable_products < 10:
+        warning_msg = "Few products have both excess and shortage. Optimization results may be limited."
+        print(f"\nWARNING: {warning_msg}")
+        print(
+            "Consider regenerating data with different random seed for more meaningful imbalances."
+        )
+        logger_system.log_warning("data_generation", warning_msg)
+        logger_system.log_warning(
+            "data_generation",
+            "Consider regenerating data with different random seed for more meaningful imbalances.",
+        )
+    else:
+        success_msg = "Data generation successful with meaningful inventory imbalances."
+        print(f"\n{success_msg}")
+        print("Ready for optimization!")
+        logger_system.log_progress("data_generation", success_msg)
+        logger_system.log_progress("data_generation", "Ready for optimization!")
+
+    execution_time = time.time() - start_time
+    results = {
+        "stores_created": len(stores),
+        "products_created": len(products),
+        "sales_records": len(sales_df),
+        "inventory_combinations": len(inventory_df),
+        "excess_items": excess_count,
+        "shortage_items": shortage_count,
+        "balanced_items": balanced_count,
+        "transferable_products": transferable_products,
+        "output_directory": output_dir,
+    }
+
+    logger_system.log_execution_end("data_generation", execution_time, results)

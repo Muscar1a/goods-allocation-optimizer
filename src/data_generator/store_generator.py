@@ -2,7 +2,9 @@
 
 from random import random
 import numpy as np
+import pandas as pd
 
+from config import RANDOM_SEED, STORE_CITIES
 from data_generator.data_model import Store
 
 
@@ -146,3 +148,29 @@ class StoreGenerator:
                 
                 stores.append(Store(store_id, store_name, city, lat, lon))
                 store_id += 1
+        
+        if output_path:
+            stores_df = pd.DataFrame(
+                [
+                    {
+                        'store_id': store.id,
+                        'store_name': store.name,
+                        'city': store.city,
+                        'latitude': store.latitude,
+                        'longitude': store.longitude,
+                    }
+                    for store in stores
+                ]
+            )
+            stores_df.to_csv(output_path, index=False)
+            print(f"Saved {len(stores)} stores to {output_path}")
+            
+        return stores
+
+
+if __name__ == "__main__":
+    generator = StoreGenerator()
+    stores = generator.generate_stores("data/stores.csv")
+    print(f"Generated {len(stores)} stores.")
+    for store in stores:
+        print(store)

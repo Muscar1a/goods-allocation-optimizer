@@ -6,7 +6,7 @@ RANDOM_SEED = 42
 
 DATA_DIR = "data"
 RESULTS_DIR = "results"
-VISUALIZATIOONS_DIR = "visualizations"
+VISUALIZATIONS_DIR = "visualizations"
 LOGS_DIR = "logs"
 
 REQUIRED_DATA_FILES = [
@@ -63,7 +63,7 @@ def create_directories(base_path: Optional[Path] = None) -> Dict:
     directories = {
         "data": base_path / DATA_DIR,
         "results": base_path / RESULTS_DIR,
-        "visualizations": base_path / VISUALIZATIOONS_DIR,
+        "visualizations": base_path / VISUALIZATIONS_DIR,
         "logs": base_path / LOGS_DIR,
     }
     
