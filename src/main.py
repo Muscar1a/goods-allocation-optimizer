@@ -1,6 +1,7 @@
 from time import time
 import pandas as pd
 from data_generator.data_generator_main import generate_all_data
+from engine.genetic_algorithm import GeneticAlgorithmOptimizer
 from engine.results_manager import ResultsManager
 from src.engine.analyzer import InventoryAnalyzer
 import argparse
@@ -81,7 +82,37 @@ def run_rule_based_optimization(analyzer, excess_df, needed_df, args):
 
     return transfer_plan, None
 
-
+def run_ga_optimization(analyzer, excess_df, needed_df, args):
+    """Run genetic algorithm optimization."""
+    print("\n=== GENETIC ALGORITHM OPTIMIZATION ===")
+    
+    optimizer = GeneticAlgorithmOptimizer(random_seed=args.seed)
+    
+    optimizer.load_matrices(
+        distance_path=os.path.join(args.data_dir, "distance_matrix.csv"),
+        cost_path=os.path.join(args.data_dir, "transport_cost_matrix.csv"),
+    )
+    
+    start_time = time.time()
+    
+    transfer_plan = optimizer.optimizer(
+        excess_df,
+        needed_df,
+        population_size=args.ga_population,
+        generations=args.ga_generations,
+        crossover_prob=args.ga_crossover,
+        mutation_prob=args.ga_mutation,
+    )
+    
+    execution_time = time.time() - start_time
+    print(f"Genetic algorithm optimization completed in {execution_time:.2f} seconds")
+    
+    stores_df = pd.read_csv(os.path.join(args.data_dir, "stores.csv"))
+    products_df = pd.read_csv(os.path.join(args.data_dir, "products.csv"))
+    optimizer.add_store_product_names(stores_df, products_df)
+    
+    # TODO
+    
 def run_analysis(args):
     """Run inventory analysis."""
     print("\n=== INVENTORY ANALYSIS ===")
@@ -247,7 +278,11 @@ def main():
         )
         results_dict["Rule-based"] = (transfer_plan, impact_df)
         
-    # if args.ga or args.all:
+    if args.ga or args.all:
+        transfer_plan, impact_df = run_ga_optimization(
+            analyzer , excess_df, needed_df, args
+        )
+        results_dict["Genetic Algorithm"] = (transfer_plan, impact_df)
     
     if results_dict:
         create_results(analysis_df, results_dict, analyzer, args)

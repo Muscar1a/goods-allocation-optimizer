@@ -20,7 +20,7 @@ REQUIRED_DATA_FILES = [
 
 ### Data generation
 NUM_PRODUCTS = 30
-SALE_DAYS = 90
+SALES_DAYS = 90
 
 MIN_INVENTORY_DAYS = 7
 MAX_INVENTORY_DAYS = 21
@@ -71,3 +71,41 @@ def create_directories(base_path: Optional[Path] = None) -> Dict:
         path.mkdir(parents=True, exist_ok=True)
         
     return directories
+
+ENVIRONMENTS = {
+    "development": {
+        "debug": True,
+        "ga_population": 30,
+        "ga_generations": 20,
+        "num_products": 20,
+        "sales_days": 90,
+    },
+    "production": {
+        "debug": False,
+        "ga_population": GA_POPULATION_SIZE,
+        "ga_generations": GA_GENERATIONS,
+        "num_products": NUM_PRODUCTS,
+        "sales_days": SALES_DAYS,
+    },
+    "testing": {
+        "debug": True,
+        "ga_population": 10,
+        "ga_generations": 5,
+        "num_products": 10,
+        "sales_days": 30,
+    },
+}
+
+
+def get_environment_config(env: str = "development") -> dict:
+    return ENVIRONMENTS.get(env, ENVIRONMENTS["development"])
+
+
+def get_ga_config() -> dict:
+    return {
+        "population_size": GA_POPULATION_SIZE,
+        "num_generations": GA_GENERATIONS,
+        "crossover_prob": GA_CROSSOVER_PROB,
+        "mutation_prob": GA_MUTATION_PROB,
+        "tournament_size": GA_TOURNAMENT_SIZE,
+    }
