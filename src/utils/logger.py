@@ -1,9 +1,10 @@
-import datetime
+from datetime import datetime
 import logging
+from pathlib import Path
 
 class OptimizationLogger:
     def __init__(self, base_log_dir="logs"):
-        self.base_log_dir = base_log_dir
+        self.base_log_dir = Path(base_log_dir)
         self.today = datetime.now().strftime("%Y-%m-%d")
         self.log_dir = self.base_log_dir / self.today
         

@@ -191,7 +191,7 @@ class GeneticAlgorithmOptimizer:
             print(f"Generation 0: Best={min_fitness:,.0f}, Avg={avg_fitness:,.0f}")
             
         print(f"\nStep 3: Evolving population over {num_generations} generations...")
-        self.logger_system.log_progress.log_progress(
+        self.logger_system.log_progress(
             "genetic_algorithm_optimization",
             f"Step 3: Evolving population over {num_generations} generations...",
         )
@@ -219,7 +219,127 @@ class GeneticAlgorithmOptimizer:
                 for individual in offspring:
                     if random.random() < mutation_prob:
                         self._mutate(individual)
-                # TODO: Evaluate offspring fitness
+                
+                offspring = offspring[:population_size]
+                
+                self._evaluate_population(offspring)
+                
+                current_best = min(offspring, key=lambda x: x.fitness)
+                if best_individual.fitness < current_best.fitness:
+                    worst_idx = max(
+                        range(len(offspring)), key=lambda i: offspring [i].fitness
+                    )
+                    offspring[worst_idx] = best_individual
+                else:
+                    best_individual = current_best
+                    
+                population = offspring
+                
+                fitness_values = [ind.fitness for ind in population]
+                min_fitness =min(fitness_values)
+                avg_fitness = sum(fitness_values) / len(fitness_values)
+                generation_stats.append((generation, min_fitness, avg_fitness))
+                
+                pbar.set_postfix(
+                    {
+                        "Best": f"{min_fitness:,.0f}",
+                        "Avg": f"{avg_fitness:,.0f}",
+                        "Transfers": len(best_individual.transfer_plan),
+                    }
+                )
+                
+                if verbose and (generation % 10 == 0 or generation == num_generations):
+                    generation_msg = f"Generation {generation}: Best={min_fitness:,.0f}, Avg={avg_fitness:,.0f}"
+                    self.logger_system.log_progress(
+                        "genetic_algorithm_optimization", generation_msg
+                    )
+                    
+        print("\nStep 4: Extracting best solution...")
+        self.logger_system.log_progress(
+            "genetic_algorithm_optimization", "Step 4: Extracting best solution..."
+        )
+        best_individual = min(population, key=lambda x: x.fitness)
+        self.best_solution = best_individual
+        self.best_fitness = best_individual.fitness
+        
+        self.transfer_plan = self._convert_to_df(best_individual)
+                
+        if not self.transfer_plan.empty:
+            total_units = self.transfer_plan["units"].sum()
+            total_cost = self.transfer_plan["transport_cost"].sum()
+            avg_cost_per_unit = total_cost / total_units if total_units > 0 else 0
+
+            summary_msg = f"Genetic Algorithm Results:"
+            print(f"\n{summary_msg}")
+            print(f"   • Best fitness (total cost): {self.best_fitness:,.0f}")
+            print(f"   • Total transfers: {len(self.transfer_plan)}")
+            print(f"   • Total units to transfer: {total_units}")
+            print(f"   • Total transport cost: {total_cost:,.0f}")
+            print(f"   • Average cost per unit: {avg_cost_per_unit:,.0f}")
+
+            # Log results
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization", summary_msg
+            )
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization",
+                f"Best fitness (total cost): {self.best_fitness:,.0f}",
+            )
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization",
+                f"Total transfers: {len(self.transfer_plan)}",
+            )
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization",
+                f"Total units to transfer: {total_units}",
+            )
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization",
+                f"Total transport cost: {total_cost:,.0f}",
+            )
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization",
+                f"Average cost per unit: {avg_cost_per_unit:,.0f}",
+            )
+        else:
+            no_transfers_msg = "No beneficial transfers found by genetic algorithm."
+            print(no_transfers_msg)
+            self.logger_system.log_progress(
+                "genetic_algorithm_optimization", no_transfers_msg
+            )
+            
+        execution_time = time.time() - start_time
+        results = {
+            "transfers_generated": len(self.transfer_plan),
+            "best_fitness": (
+                float(self.best_fitness) if self.best_fitness is not None else 0
+            ),
+            "total_units": (
+                self.transfer_plan["units"].sum() if not self.transfer_plan.empty else 0
+            ),
+            "total_cost": (
+                self.transfer_plan["transport_cost"].sum()
+                if not self.transfer_plan.empty
+                else 0
+            ),
+            "avg_cost_per_unit": (
+                (
+                    self.transfer_plan["transport_cost"].sum()
+                    / self.transfer_plan["units"].sum()
+                )
+                if not self.transfer_plan.empty
+                and self.transfer_plan["units"].sum() > 0
+                else 0
+            ),
+            "generations_completed": num_generations,
+            "population_size_used": population_size,
+        }
+
+        self.logger_system.log_execution_end(
+            "genetic_algorithm_optimization", execution_time, results
+        )
+
+        return self.transfer_plan
         
     def _create_initial_population(self, population_size):
         population = []
@@ -311,7 +431,7 @@ class GeneticAlgorithmOptimizer:
                 (self.excess_inventory["store_id"] == from_store) &
                 (self.excess_inventory["product_id"] == product_id)
             ]
-            if len(excess_match > 0):
+            if len(excess_match) > 0:
                 max_excess = excess_match.iloc[0]["excess_units"]
                 
             max_needed = 0
@@ -319,7 +439,7 @@ class GeneticAlgorithmOptimizer:
                 (self.needed_inventory["store_id"] == to_store) &
                 (self.needed_inventory["product_id"] == product_id)
             ]
-            if len(needed_match > 0):
+            if len(needed_match) > 0:
                 max_needed = needed_match.iloc[0]["needed_units"]
             
             excess_already_used = excess_used.get(excess_key, 0)
@@ -362,8 +482,113 @@ class GeneticAlgorithmOptimizer:
             max_units = self._get_max_transfer(
                 transfer["from_store"], transfer["to_store"], transfer["product_id"]
             )
-            # TODO
             
+            if max_units > 0:
+                individual.transfer_plan[transfer_idx]["units"] = random.randint(1, max_units)
+        
+        elif mutation_type == 2:
+            if len(individual.transfer_plan) > 1:
+                transfer_idx = random.randint(0, len(individual.transfer_plan) - 1)
+                individual.transfer_plan.pop(transfer_idx)
+                
+        elif mutation_type == 3:
+            new_transfer = self._create_random_transfer()
+            if new_transfer:
+                individual.transfer_plan.append(new_transfer)
+        
+        else:
+            transfer_idx = random.randint(0, len(individual.transfer_plan) - 1)
+            transfer = individual.transfer_plan[transfer_idx]
+            
+            if random.random() < 0.5:
+                exccess_options = self.excess_inventory[
+                    (self.excess_inventory["product_id"] == transfer["product_id"])
+                     & (self.excess_inventory["store_id"] != transfer["from_store"])
+                ]
+                if len(exccess_options) > 0:
+                    new_source = random.choice(exccess_options["store_id"].tolist())
+                    individual.transfer_plan[transfer_idx]["from_store"] = new_source
+            else:
+                needed_options = self.needed_inventory[
+                    (self.needed_inventory["product_id"] == transfer["product_id"])
+                     & (self.needed_inventory["store_id"] != transfer["to_store"])
+                ]
+                if len(needed_options) > 0:
+                    new_dest = random.choice(needed_options["store_id"].tolist())
+                    individual.transfer_plan[transfer_idx]["to_store"] = new_dest
+        
+        individual.transfer_plan = self._repair_solution(individual.transfer_plan)
+            
+    def _create_random_transfer(self):
+        """Create one random transfer mutation."""
+        if not self.valid_products:
+            return None
+        
+        product_id = random.choice(self.valid_products)
+        excess_options = self.excess_inventory[
+            self.excess_inventory["product_id"] == product_id
+        ]
+        needed_options = self.needed_inventory[
+            self.needed_inventory["product_id"] == product_id
+        ]
+        
+        if len(excess_options) == 0 or len(needed_options) == 0:
+            return None
+        
+        from_store = random.choice(excess_options["store_id"].tolist())
+        to_store = random.choice(needed_options["store_id"].tolist())
+        
+        if from_store == to_store:
+            return None
+        
+        max_units = self._get_max_transfer(from_store, to_store, product_id)
+        if max_units > 0:
+            units = random.randint(1, max_units)
+            return {
+                "from_store": from_store,
+                "to_store": to_store,
+                "product_id": product_id,
+                "units": units,
+            }
+        
+        return None
+    
+    def _evaluate_population(self, population):
+        for individual in population:
+            individual.fitness = self._calculate_fitness(individual.transfer_plan)
+            
+    def _calculate_fitness(self, transfer_plan):
+        total_cost = 0
+        
+        for transfer in transfer_plan:
+            from_store = transfer["from_store"]
+            to_store = transfer["to_store"]
+            units = transfer["units"]
+            
+            if (
+                self.transport_cost_matrix is not None
+                and from_store in self.transport_cost_matrix.index
+                and to_store in self.transport_cost_matrix.columns
+            ):
+                cost_per_unit = float(
+                    self.transport_cost_matrix.loc[from_store, to_store]
+                )
+                total_cost += cost_per_unit * units
+            
+            elif (
+                self.distance_matrix is not None
+                and from_store in self.distance_matrix.index
+                and to_store in self.distance_matrix.columns
+            ):
+                distance = float(self.distance_matrix.loc[from_store, to_store])
+                base_cost_per_km = 1000 # Example cost
+                total_cost += base_cost_per_km * distance * units
+            
+            else:
+                total_cost += 999999 * units
+
+        return total_cost
+    
     def _get_max_transfer(self, from_store, to_store, product_id):
         excess_match = self.excess_inventory[
             (self.excess_inventory["store_id"] == from_store)
@@ -420,7 +645,7 @@ class GeneticAlgorithmOptimizer:
                     continue
                 
                 for excess_store, excess_amount in excess_list:
-                    if excess_amount == need_store or excess_amount <= 0:
+                    if excess_store == need_store or excess_amount <= 0:
                         continue
                     
                     max_transfer = min(excess_amount, need_amount)
@@ -450,7 +675,63 @@ class GeneticAlgorithmOptimizer:
         
         return transfer_plan               
         
+    def _convert_to_df(self, individual):
+        if not individual.transfer_plan:
+            return pd.DataFrame()
         
+        transfers = []
+        
+        for transfer in individual.transfer_plan:
+            from_store = transfer["from_store"]
+            to_store = transfer["to_store"]
+            product_id = transfer["product_id"]
+            units = transfer["units"]
+            
+            distance = 0
+            if (
+                self.distance_matrix is not None
+                and from_store in self.distance_matrix.index
+                and to_store in self.distance_matrix.columns
+            ):
+                distance = float(self.distance_matrix.loc[from_store, to_store])
+            
+            transport_cost = 0
+            if (
+                self.transport_cost_matrix is not None
+                and from_store in self.transport_cost_matrix.index
+                and to_store in self.transport_cost_matrix.columns
+            ):
+                cost_per_unit = float(
+                    self.transport_cost_matrix.loc[from_store, to_store]
+                )
+                transport_cost = cost_per_unit * units
+            else:
+                transport_cost = distance * 1000 * units
+                
+            transfers.append(
+                {
+                    "from_store_id": from_store,
+                    "to_store_id": to_store,
+                    "product_id": product_id,
+                    "units": int(units),
+                    "distance_km": distance,
+                    "transport_cost": transport_cost,
+                }
+            )
+        return pd.DataFrame(transfers)
+    
+    def add_store_product_names(self, stores_df=None, products_df=None):
+        if self.transfer_plan is None or self.transfer_plan.empty:
+            return
+        
+        if stores_df is not None:
+            store_name_map = stores_df.set_index("store_id")["store_name"].to_dict()
+            self.transfer_plan["from_store"] = self.transfer_plan["from_store_id"].map(store_name_map)
+            self.transfer_plan["to_store"] = self.transfer_plan["to_store_id"].map(store_name_map)
+            
+        if products_df is not None:
+            product_name_map = products_df.set_index("product_id")["product_name"].to_dict()
+            self.transfer_plan["product_name"] = self.transfer_plan["product_id"].map(product_name_map)
         
 if __name__ == "__main__":
     
@@ -522,3 +803,34 @@ if __name__ == "__main__":
         verbose=True,
     )
     
+    if (data_dir / "stores.csv").exists() and (data_dir / "products.csv").exists():
+        stores_df = pd.read_csv(str(data_dir / "stores.csv"))
+        products_df = pd.read_csv(str(data_dir / "products.csv"))
+        optimizer.add_store_product_names(stores_df, products_df)
+        
+    if not transfer_plan.empty:
+        results_dir = project_root / "results"
+        results_dir.mkdir(exist_ok=True)
+        output_path = results_dir / "ga_transfers_test.csv"
+        transfer_plan.to_csv(str(output_path), index=False)
+
+        print(f"\nResults saved to: {output_path}")
+        print("Genetic Algorithm test completed successfully!")
+
+        # Show a few sample transfers
+        print(f"\nSample transfers (top 3):")
+        sample_cols = [
+            "from_store_id",
+            "to_store_id",
+            "product_id",
+            "units",
+            "transport_cost",
+        ]
+        available_cols = [col for col in sample_cols if col in transfer_plan.columns]
+        print(transfer_plan[available_cols].head(3).to_string(index=False))
+        
+    else:
+        print("No transfers were generated. This might indicate:")
+        print("   • No beneficial transfers exist")
+        print("   • Constraints are too restrictive")
+        print("   • Need to adjust GA parameters")
